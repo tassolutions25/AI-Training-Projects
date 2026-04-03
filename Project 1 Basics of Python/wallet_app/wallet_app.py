@@ -33,9 +33,6 @@ def save_data():
             f.write(f"{t['sender']},{t['receiver']},{t['amt']}\n")
 
 
-# --- BACKEND LOGIC ---
-
-
 def is_valid_eth_phone(phone):
     """Regex for Ethiopian Format: Starts with 09, 07, or +251 followed by 8 digits."""
     pattern = r"^(\+2519|\+2517|09|07)\d{8}$"
