@@ -1,9 +1,6 @@
 import unittest
 import re
 
-# --- FUNCTIONS TO TEST (Copied from the main app logic) ---
-
-
 def is_valid_eth_phone(phone):
     pattern = r"^(\+2519|\+2517|09|07)\d{8}$"
     return re.match(pattern, phone) is not None
