@@ -15,6 +15,7 @@ print(df.head())
 # ==========================================
 # 2. DATA CLEANING (Column by Column)
 # ==========================================
+
 # A. Create Flags for Missing Data (Important for the model to know what was missing)
 df["MonthlyIncome_was_missing"] = df["MonthlyIncome"].isnull().astype(int)
 df["NumberOfDependents_was_missing"] = df["NumberOfDependents"].isnull().astype(int)
@@ -71,6 +72,7 @@ print(df[["MonthlyIncome", "MonthlyDebt", "DebtRatio_Cleaned"]].head(10))
 # ==========================================
 # 2. HYPOTHESIS TESTING
 # ==========================================
+
 print("\n--- STATISTICAL HYPOTHESIS TESTING RESULTS ---")
 
 # Grouping the data for tests
