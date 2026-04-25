@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy import stats
-from scipy.stats import kurtosis
+from scipy.stats import skew, kurtosis
 from imblearn.over_sampling import SMOTE
 
 # Loading Data
@@ -14,7 +14,7 @@ df.drop(columns=["Unnamed: 0"], inplace=True, errors="ignore")
 print(df.head())
 
 # ==========================================
-# 2. DATA CLEANING (Column by Column)
+# 1. DATA CLEANING (Column by Column)
 # ==========================================
 # A. Create Flags for Missing Data (Important for the model to know what was missing)
 df["MonthlyIncome_was_missing"] = df["MonthlyIncome"].isnull().astype(int)
@@ -61,7 +61,6 @@ df["RevolvingUtilizationOfUnsecuredLines"] = df[
 print("--- Cleaning Complete ---")
 print(df[["MonthlyIncome", "MonthlyDebt", "DebtRatio_Cleaned"]].head(10))
 
-
 # ==========================================
 # 2. FEATURE ENGINEERING
 # ==========================================
@@ -84,7 +83,34 @@ df["LatePaymentIntensity"] = df["TotalTimesPastDue"] / (
 df["is_retired"] = (df["age"] > 65).astype(int)
 
 # ==========================================
-# 3. KURTOSIS ANALYSIS
+# 3. Univariate Analysis
+# ==========================================
+
+fig, axes = plt.subplots(2, 2, figsize=(15, 12))
+# Target Variable Distribution
+sns.countplot(x="SeriousDlqin2yrs", data=df, ax=axes[0, 0], palette="viridis")
+axes[0, 0].set_title("Distribution of Financial Distress (Target)")
+
+# Age Distribution
+sns.histplot(df["age"], bins=30, kde=True, ax=axes[0, 1], color="blue")
+axes[0, 1].set_title("Borrower Age Distribution")
+
+# Monthly Income Distribution (Log transformation method because of high variance)
+sns.histplot(df["MonthlyIncome"], bins=50, kde=True, ax=axes[1, 0], color="green")
+axes[1, 0].set_xscale("log")
+axes[1, 0].set_title("Monthly Income Distribution (Log Scale)")
+
+# Total Late Payments Distribution
+sns.countplot(
+    x="TotalTimesPastDue", data=df[df["TotalTimesPastDue"] < 10], ax=axes[1, 1]
+)
+axes[1, 1].set_title("Frequency of Total Late Payments (< 10)")
+
+plt.tight_layout()
+plt.show()
+
+# ==========================================
+# 4. KURTOSIS AND SKEWNESS
 # ==========================================
 print("\n--- Kurtosis Analysis (Outlier Tailedness) ---")
 # Kurtosis > 3 indicates "Heavy Tails" (Leptokurtic) - high risk of outliers
@@ -94,16 +120,53 @@ numerical_cols = [
     "DebtRatio_Cleaned",
     "RevolvingUtilizationOfUnsecuredLines",
 ]
+
 for col in numerical_cols:
+    sk_val = skew(df[col])
     kurt_val = kurtosis(df[col])
+    print(f"Skewness of {col}: {sk_val:.2f}")
     print(f"Kurtosis of {col}: {kurt_val:.2f}")
+
+    if sk_val > 1:
+        print(
+            "   -> Result: Highly Positively Skewed (Right Tail). Most values are low, few are very high."
+        )
+    elif sk_val < -1:
+        print("   -> Result: Highly Negatively Skewed (Left Tail).")
+    else:
+        print("   -> Result: Fairly Symmetrical.")
+
     if kurt_val > 3:
         print(
             f"   -> Result: High Kurtosis. {col} is heavily influenced by extreme outliers."
         )
 
+
 # ==========================================
-# 4. HYPOTHESIS TESTING
+# 5. Bivariate Analysis
+# ==========================================
+
+# 1. Utilization vs Financial Distress (Boxplot)
+plt.figure(figsize=(10, 6))
+sns.boxplot(x="SeriousDlqin2yrs", y="RevolvingUtilizationOfUnsecuredLines", data=df)
+plt.title("Credit Utilization vs Financial Distress")
+plt.show()
+
+# 2. Relationship between Number of Dependents and Distress
+plt.figure(figsize=(10, 6))
+sns.barplot(x="NumberOfDependents", y="SeriousDlqin2yrs", data=df)
+plt.title("Probability of Distress by Number of Dependents")
+plt.show()
+
+# 3. Recalculated DebtRatio vs Distress
+plt.figure(figsize=(10, 6))
+sns.boxplot(x="SeriousDlqin2yrs", y="DebtRatio_Cleaned", data=df)
+plt.ylim(0, 2)  # Limiting Y-axis to see the bulk of the data
+plt.title("Cleaned Debt Ratio vs Financial Distress")
+plt.show()
+
+# ==========================================
+# 6. HYPOTHESIS TESTING
 # ==========================================
 print("\n--- STATISTICAL HYPOTHESIS TESTING RESULTS ---")
 
@@ -159,7 +222,7 @@ df["Ever90DaysLate"] = df["NumberOfTimes90DaysLate"].apply(lambda x: 1 if x > 0 
 # How many were NOT late AND had distress.
 # How many were NOT late AND HAD NO distress.
 contingency_table = pd.crosstab(df["Ever90DaysLate"], df["SeriousDlqin2yrs"])
-# print(f"\n3. Contingency table \n {contingency_table}")
+print(f"\n3. Contingency table \n {contingency_table}")
 chi2, p_val_chi, dof, ex = stats.chi2_contingency(contingency_table)
 
 print(f"\n3. Chi-Square Test for 90+ Days Late Behavior:")
@@ -171,36 +234,60 @@ if p_val_chi < 0.05:
 else:
     print("   Result: Fail to Reject Null Hypothesis.")
 
-
 # ==========================================
-# 5. Expanded Univariate Analysis
+# 8. Correlation Matrix & Multicollinearity Analysis
 # ==========================================
+plt.figure(figsize=(15, 10))
 
-fig, axes = plt.subplots(2, 2, figsize=(15, 12))
-# Target Variable Distribution
-sns.countplot(x="SeriousDlqin2yrs", data=df, ax=axes[0, 0], palette="viridis")
-axes[0, 0].set_title("Distribution of Financial Distress (Target)")
+# 1. Filter out the binary "flag" columns to keep the map clean
+cols_to_drop = [
+    "MonthlyIncome_was_missing",
+    "NumberOfDependents_was_missing",
+    "is_retired",
+    "Ever90DaysLate",
+]
+corr_df = df.drop(columns=cols_to_drop)
 
-# Age Distribution
-sns.histplot(df["age"], bins=30, kde=True, ax=axes[0, 1], color="blue")
-axes[0, 1].set_title("Borrower Age Distribution")
+# 2. Calculate the Correlation Matrix
+matrix = corr_df.corr()
 
-# Monthly Income Distribution (Log transformation method because of high variance)
-sns.histplot(df["MonthlyIncome"], bins=50, kde=True, ax=axes[1, 0], color="green")
-axes[1, 0].set_xscale("log")
-axes[1, 0].set_title("Monthly Income Distribution (Log Scale)")
+# 3. Create a "Mask" for the upper triangle
+# This makes the heatmap much easier to read by removing the mirrored half
+mask = np.triu(np.ones_like(matrix, dtype=bool))
 
-# Total Late Payments Distribution
-sns.countplot(
-    x="TotalTimesPastDue", data=df[df["TotalTimesPastDue"] < 10], ax=axes[1, 1]
+# 4. Plotting the Heatmap
+sns.heatmap(
+    matrix,
+    mask=mask,
+    annot=True,
+    fmt=".2f",
+    cmap="coolwarm",
+    vmin=-1,
+    vmax=1,
+    center=0,
+    linewidths=0.5,
+    cbar_kws={"shrink": 0.8},
 )
-axes[1, 1].set_title("Frequency of Total Late Payments (< 10)")
 
-plt.tight_layout()
+plt.title("Refined Correlation Heatmap (Filtered Features)", fontsize=16)
 plt.show()
 
+# 5. Extracting specific insights for the Report
+print("\n--- Top Features Correlated with Financial Distress (Target) ---")
+target_corr = matrix["SeriousDlqin2yrs"].sort_values(ascending=False)
+print(target_corr)
+
+# 6. Checking for Multicollinearity (Redundant Variables)
+print("\n--- Multicollinearity Warning ---")
+high_corr = matrix.unstack().sort_values(ascending=False)
+high_corr = high_corr[(high_corr > 0.8) & (high_corr < 1.0)]
+if not high_corr.empty:
+    print("The following features are highly correlated (>0.8) and may be redundant:")
+    print(high_corr.drop_duplicates())
+
+
 # ==========================================
-# 6. DATA IMBALANCE MITIGATION (SMOTE)
+# 8. DATA IMBALANCE MITIGATION (SMOTE) -> Pre Modeling
 # ==========================================
 print("\n--- Mitigating Data Imbalance ---")
 
@@ -222,52 +309,12 @@ print(f"Resampled Class 0: {pd.Series(y_resampled).value_counts()[0]}")
 print(f"Resampled Class 1: {pd.Series(y_resampled).value_counts()[1]}")
 print("Result: Synthetic data created to balance the classes perfectly (1:1).")
 
-# ==========================================
-# 7. Bivariate Analysis
-# ==========================================
-
-# 1. Utilization vs Financial Distress (Boxplot)
-plt.figure(figsize=(10, 6))
-sns.boxplot(x="SeriousDlqin2yrs", y="RevolvingUtilizationOfUnsecuredLines", data=df)
-plt.title("Credit Utilization vs Financial Distress")
-plt.show()
-
-# 2. Relationship between Number of Dependents and Distress
-plt.figure(figsize=(10, 6))
-sns.barplot(x="NumberOfDependents", y="SeriousDlqin2yrs", data=df)
-plt.title("Probability of Distress by Number of Dependents")
-plt.show()
-
-# 3. Recalculated DebtRatio vs Distress
-plt.figure(figsize=(10, 6))
-sns.boxplot(x="SeriousDlqin2yrs", y="DebtRatio_Cleaned", data=df)
-plt.ylim(0, 2)  # Limiting Y-axis to see the bulk of the data
-plt.title("Cleaned Debt Ratio vs Financial Distress")
-plt.show()
-
-# ==========================================
-# 8. Correlation Matrix (Final Overview)
-# ==========================================
-plt.figure(figsize=(14, 10))
-correlation_matrix = df.drop(
-    columns=["MonthlyIncome_was_missing", "NumberOfDependents_was_missing"]
-).corr()
-sns.heatmap(correlation_matrix, annot=True, cmap="coolwarm", fmt=".2f", linewidths=0.5)
-plt.title("Correlation Heatmap of All Features")
-plt.show()
-
 # [KDE Plots / Heatmaps logic...]
-print(df["LatePaymentIntensity"])
-plt.figure(figsize=(10, 6))
-sns.kdeplot(
-    df[df["SeriousDlqin2yrs"] == 1]["LatePaymentIntensity"], label="Distress", fill=True
-)
-sns.kdeplot(
-    df[df["SeriousDlqin2yrs"] == 0]["LatePaymentIntensity"],
-    label="No Distress",
-    fill=True,
-)
-plt.title("Feature Engineering: Late Payment Intensity Distribution")
-plt.xlim(0, 2)
-plt.legend()
-plt.show()
+# print(df['LatePaymentIntensity'])
+# plt.figure(figsize=(10, 6))
+# sns.kdeplot(df[df['SeriousDlqin2yrs']==1]['LatePaymentIntensity'], label="Distress", fill=True)
+# sns.kdeplot(df[df['SeriousDlqin2yrs']==0]['LatePaymentIntensity'], label="No Distress", fill=True)
+# plt.title("Feature Engineering: Late Payment Intensity Distribution")
+# plt.xlim(0, 2)
+# plt.legend()
+# plt.show()
